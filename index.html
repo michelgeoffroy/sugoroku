@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -90,11 +91,12 @@ canvas#board { display: block; width: var(--board-size); height: var(--board-siz
 
 
 /* プレイヤーカード */
-.player-card { background: var(--panel-bg); border-radius: var(--card-radius); padding: 8px 10px; border: var(--panel-border); transition: border-color 0.2s; overflow: visible; }
+.player-card { background: var(--panel-bg); border-radius: var(--card-radius); padding: 6px 10px; border: var(--panel-border); transition: border-color 0.2s; overflow: visible; }
 .player-card.active { border-color: #8a7e52; }
-.pc-name { font-size: 11px; color: #9a9680; margin-bottom: 5px; }
-.pc-pieces { display: flex; gap: 4px; flex-wrap: wrap; min-height: 13px; overflow: visible; }
-.piece-dot { width: 13px; height: 13px; border-radius: 50%; }
+.pc-name { font-size: 11px; color: #9a9680; white-space: nowrap; }
+.pc-header { display: flex; align-items: center; gap: 6px; }
+.pc-pieces { display: flex; gap: 4px; flex-wrap: wrap; min-height: 16px; overflow: visible; }
+.piece-dot { width: 32px; height: 32px; border-radius: 50%; }
 .piece-dot.done { opacity: 0.25; }
 .piece-dot.selectable { cursor: pointer; box-shadow: 0 0 0 2px #fff; }
 
@@ -147,13 +149,13 @@ canvas#board { display: block; width: var(--board-size); height: var(--board-siz
     <!-- 盤面: 左列 全行 -->
     <div id="board-cell">
       <div id="board-top">
-        <div class="player-card" id="pc2"><div class="pc-name">P3 CPU</div><div class="pc-pieces" id="pp2"></div></div>
-        <div class="player-card" id="pc3"><div class="pc-name">P4 CPU</div><div class="pc-pieces" id="pp3"></div></div>
+        <div class="player-card" id="pc2"><div class="pc-header"><div class="pc-name" id="pname2">P3</div><div class="pc-pieces" id="pp2"></div></div></div>
+        <div class="player-card" id="pc3"><div class="pc-header"><div class="pc-name" id="pname3">P4</div><div class="pc-pieces" id="pp3"></div></div></div>
       </div>
       <canvas id="board" width="380" height="380"></canvas>
       <div id="board-bottom">
-        <div class="player-card" id="pc1"><div class="pc-name">P2 CPU</div><div class="pc-pieces" id="pp1"></div></div>
-        <div class="player-card active" id="pc0"><div class="pc-name">P1</div><div class="pc-pieces" id="pp0"></div></div>
+        <div class="player-card" id="pc1"><div class="pc-header"><div class="pc-name" id="pname1">P2</div><div class="pc-pieces" id="pp1"></div></div></div>
+        <div class="player-card active" id="pc0"><div class="pc-header"><div class="pc-name" id="pname0">P1</div><div class="pc-pieces" id="pp0"></div></div></div>
       </div>
       <div id="msg-bar"></div>
     </div>
@@ -228,7 +230,7 @@ const charImgs=PLAYER_IMGS.map(src=>{
   if(!src)return null;
   const img=new Image();img.src=src;return img;
 });
-const PLAYER_NAMES=['P1','P2','P3 CPU','P4 CPU'];
+const PLAYER_NAMES=['P1','P2','P3','P4'];
 let IS_CPU=[false,true,true,true];
 let CPU_LEVEL=[0,1,1,1]; // 0=人間, 1=弱, 2=中, 3=強
 const NUM_PLAYERS=4,NUM_PIECES=4;
@@ -323,6 +325,7 @@ function animateMove(playerIdx, pieceIdx, steps, onComplete){
   animTarget={pi:playerIdx, ci:pieceIdx};
   state.selectedPieceIdx=null;
   state.currentRoll=null;
+  updateCards(); // アニメ開始直後にサイドパネルを更新（対象コマを隠す）
   const msPerStep=300;
   let stepIdx=0;
 
@@ -759,14 +762,17 @@ function updateCards(){
   for(let i=0;i<NUM_PLAYERS;i++){
     document.getElementById('pc'+i).classList.toggle('active',i===state.turn);
     const pp=document.getElementById('pp'+i);pp.innerHTML='';
+    const pname=document.getElementById('pname'+i);
+    if(pname) pname.style.display='';
     state.pieces[i].forEach((piece,pi)=>{
       if(piece.pos!==-1&&piece.pos!==20)return;
+      if(animTarget&&animTarget.pi===i&&animTarget.ci===pi)return;
       const img=charImgs[i];
       let dot;
       if(img&&img.complete&&img.naturalWidth>0){
         dot=document.createElement('img');
         dot.src=img.src;
-        dot.style.width='16px';dot.style.height='16px';
+        dot.style.width='32px';dot.style.height='32px';
         dot.style.imageRendering='pixelated';
         dot.style.opacity=piece.pos===20?'0.25':'1';
       }else{
