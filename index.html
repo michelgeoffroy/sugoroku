@@ -16,7 +16,7 @@
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  background: #111310;
+  background: #111a0a;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -237,8 +237,24 @@ const W=380,PAD=32,INNER=W-PAD*2,STEP=INNER/5;
 function pt(c,r){return{x:PAD+c*STEP,y:PAD+r*STEP};}
 const OUTER=[pt(5,5),pt(5,4),pt(5,3),pt(5,2),pt(5,1),pt(5,0),pt(4,0),pt(3,0),pt(2,0),pt(1,0),pt(0,0),pt(0,1),pt(0,2),pt(0,3),pt(0,4),pt(0,5),pt(1,5),pt(2,5),pt(3,5),pt(4,5)];
 const CENTER=pt(2.5,2.5);
-const DIAG_RU=[pt(4,1),pt(3,2),CENTER,pt(2,3),pt(1,4)];
-const DIAG_RD=[pt(1,1),pt(2,2),CENTER,pt(3,3),pt(4,4)];
+// 対角線マスを3等分（かど→中央を1/3, 2/3の2点＋中央）
+function lerpPt(a,b,t){return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};}
+const RU_CORNER=OUTER[5],LB_CORNER=OUTER[15];
+const LU_CORNER=OUTER[10],RB_CORNER=OUTER[0];
+const DIAG_RU=[
+  lerpPt(RU_CORNER,CENTER,1/3),
+  lerpPt(RU_CORNER,CENTER,2/3),
+  CENTER,
+  lerpPt(CENTER,LB_CORNER,1/3),
+  lerpPt(CENTER,LB_CORNER,2/3),
+];
+const DIAG_RD=[
+  lerpPt(LU_CORNER,CENTER,1/3),
+  lerpPt(LU_CORNER,CENTER,2/3),
+  CENTER,
+  lerpPt(CENTER,RB_CORNER,1/3),
+  lerpPt(CENTER,RB_CORNER,2/3),
+];
 
 const AC=new(window.AudioContext||window.webkitAudioContext)();
 function rac(){if(AC.state==='suspended')AC.resume();}
@@ -279,7 +295,8 @@ const SE={
 let state=null;
 let animating=false; // アニメーション中フラグ
 let showArrows=false;
-let rollLimit=4; // ロール上限（通常4、踏んだ後2） // 矢印表示フラグ（明示的にtrueにしたときだけ表示）
+let rollLimit=4; // ロール上限（通常4、踏んだ後2）
+let animTargets=[]; // アニメーション中のコマ一覧 // 矢印表示フラグ（明示的にtrueにしたときだけ表示）
 let animTarget=null; // アニメーション中のコマ {pi, ci}
 
 // 経路上の全座標を計算
@@ -321,11 +338,21 @@ function animateMove(playerIdx, pieceIdx, steps, onComplete){
 
   animating=true;
   showArrows=false;
-  animTarget={pi:playerIdx, ci:pieceIdx};
+  // 合体コマも含めて全員をanimTargetsに登録
+  const myC2=getPieceCoord(state.pieces[playerIdx][pieceIdx]);
+  animTargets=[{pi:playerIdx,ci:pieceIdx}];
+  if(myC2){
+    state.pieces[playerIdx].forEach((p,i)=>{
+      if(i===pieceIdx||p.pos===20||p.pos===-1)return;
+      const c=getPieceCoord(p);
+      if(c&&Math.abs(c.x-myC2.x)<1&&Math.abs(c.y-myC2.y)<1)animTargets.push({pi:playerIdx,ci:i});
+    });
+  }
+  animTarget=animTargets[0]; // 後方互換
   state.selectedPieceIdx=null;
   state.currentRoll=null;
-  updateCards(); // アニメ開始直後にサイドパネルを更新（対象コマを隠す）
-  const msPerStep=300;
+  updateCards();
+  const msPerStep=180;
   let stepIdx=0;
 
   // 現在の描画座標（アニメーション用）
@@ -358,7 +385,7 @@ function animateMove(playerIdx, pieceIdx, steps, onComplete){
     const startTime=performance.now();
     function tick(now){
       const t=Math.min((now-startTime)/duration,1);
-      const ease=t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2; // easeInOut
+      const ease=t<0.5?1.5*t*t+(t*0.5):1-Math.pow(-2*t+2,2)/4; // 軽めのease
       animCoords[`${playerIdx}_${pieceIdx}`]={
         x:fromCoord.x+(targetCoord.x-fromCoord.x)*ease,
         y:fromCoord.y+(targetCoord.y-fromCoord.y)*ease,
@@ -371,7 +398,7 @@ function animateMove(playerIdx, pieceIdx, steps, onComplete){
   }
 
   function nextStep(){
-    if(stepIdx>=path.length){ animating=false; animTarget=null; onComplete(); return; }
+    if(stepIdx>=path.length){ animating=false; animTarget=null; animTargets=[]; onComplete(); return; }
     const from=stepIdx===0?startCoord:path[stepIdx-1];
     const to=path[stepIdx];
     stepIdx++;
@@ -392,29 +419,60 @@ function getPieceCoord(p){
 
 function movePiece(piece,steps){
   let pos=piece.pos,route=piece.route,diagPos=piece.diagPos;
-  let remaining=steps,reachedGoal=false,stoppedAtCorner=false;
+  let remaining=steps,reachedGoal=false,stoppedAtCorner=false,invalid=false;
+  // 手元コマはSGから出発（SGは通過扱い、ゴール判定しない）
+  const startedFromHome=(pos===-1);
   if(pos===-1)pos=0;
+  // Sで止まってるコマ（pos=0、手元スタートでない）は1マスのみゴール可能
+  if(pos===0&&!startedFromHome){
+    if(steps===1){return{pos:0,route:'outer',diagPos:-1,reachedGoal:true,stoppedAtCorner:false,invalid:false};}
+    else{return{pos:0,route:'outer',diagPos:-1,reachedGoal:false,stoppedAtCorner:false,invalid:true};}
+  }
   if(route==='outer'&&pos===5){route='diagRU';diagPos=-1;}
   else if(route==='outer'&&pos===10){route='diagRD';diagPos=-1;}
   if(route==='diagRU'&&diagPos===2){route='diagRD';diagPos=2;}
   while(remaining>0){
     if(route==='outer'){
-      pos=(pos+1)%20;remaining--;
-      if(pos===0){reachedGoal=true;break;}
+      const nextPos=(pos+1)%20;
+      pos=nextPos;remaining--;
+      if(pos===0&&!startedFromHome){
+        // S（スタートマス）に到達
+        if(remaining===0){
+          // Sぴったり→停止（ゴールしない）
+          break;
+        } else if(remaining===1){
+          // Sの1マス先→ゴール
+          reachedGoal=true;break;
+        } else {
+          // S+2以上→移動不可
+          invalid=true;break;
+        }
+      }
       if(remaining===0&&(pos===5||pos===10)){stoppedAtCorner=true;break;}
     }else if(route==='diagRU'){
       diagPos++;remaining--;
       if(diagPos>4){route='outer';pos=15;diagPos=-1;}
     }else if(route==='diagRD'){
       diagPos++;remaining--;
-      if(diagPos>4){route='outer';pos=0;diagPos=-1;reachedGoal=true;break;}
+      if(diagPos>4){
+        // diagRD終点 = S（スタートマス）に到達
+        route='outer';pos=0;diagPos=-1;
+        if(remaining===0){
+          break; // Sぴったり停止
+        } else if(remaining===1){
+          reachedGoal=true;break; // S+1→ゴール
+        } else {
+          invalid=true;break; // S+2以上→移動不可
+        }
+      }
     }
   }
-  return{pos,route,diagPos,reachedGoal,stoppedAtCorner};
+  return{pos,route,diagPos,reachedGoal,stoppedAtCorner,invalid};
 }
 
 function getDestCoord(piece,steps){
   const r=movePiece(piece,steps);
+  if(r.invalid)return null; // 移動不可
   if(r.reachedGoal)return{goal:true};
   const tmp={pos:r.pos,route:r.route,diagPos:r.diagPos};
   if(r.stoppedAtCorner){tmp.route='outer';tmp.diagPos=-1;}
@@ -462,6 +520,10 @@ function rollYut(){
 function applyMove(playerIdx,pieceIdx,rollVal){
   if(animating) return;
   const piece=state.pieces[playerIdx][pieceIdx];
+
+  // 移動不可チェック
+  const moveCheck=movePiece(state.pieces[playerIdx][pieceIdx], rollVal);
+  if(moveCheck.invalid) return;
 
   // アニメーション後に実際の処理を実行
   animateMove(playerIdx, pieceIdx, rollVal, ()=>{
@@ -518,6 +580,17 @@ function onAfterMove(playerIdx){
     state.phase='move';
     state.selectedPieceIdx=null;
     state.currentRoll=null;
+    // 全コマがinvalidか確認
+    const allInvalid=state.pieces[playerIdx].every(p=>{
+      if(p.pos===20)return true;
+      return unused.every(r=>movePiece(p,r.val).invalid);
+    });
+    if(allInvalid){
+      // 動かせるコマなし→ロールを全部使用済みにして次ターン
+      state.rolls.forEach(r=>{r.used=true;});
+      setTimeout(()=>nextTurn(),600);
+      return;
+    }
     if(IS_CPU[playerIdx])setTimeout(()=>doCpuMove(playerIdx),600);
     else{
       showArrows=true;
@@ -553,7 +626,7 @@ function nextTurn(){state.turn=(state.turn+1)%NUM_PLAYERS;startTurn(state.turn);
 
 function startTurn(playerIdx){
   SE.nextTurn();
-  state.phase='roll';state.rolls=[];state.rollCount=0;state.currentRoll=null;state.selectedPieceIdx=null;clickableAreas=[];showArrows=false;rollLimit=4;
+  state.phase='roll';state.rolls=[];state.rollCount=0;state.currentRoll=null;state.selectedPieceIdx=null;clickableAreas=[];showArrows=false;rollLimit=4;animTargets=[];animTarget=null;
   document.getElementById('turn-info').textContent=`${PLAYER_NAMES[playerIdx]}のターン`;
   document.getElementById('yut-result').textContent='－';
   setMsg('');setUI(playerIdx);drawBoard();updateCards();
@@ -573,7 +646,6 @@ function doCpuRoll(playerIdx){
 function doCpuMove(playerIdx){
   const unused=state.rolls.filter(r=>!r.used&&r.val!==null);
   if(unused.length===0){setTimeout(()=>nextTurn(),400);return;}
-  if(unused.length===0)return;
   const level=CPU_LEVEL[playerIdx];
   if(level>=3) cpuMoveStrong(playerIdx,unused[0]);
   else if(level>=2) cpuMoveMedium(playerIdx,unused[0]);
@@ -640,8 +712,17 @@ function cpuMoveMedium(playerIdx,roll){
 function cpuMoveWeak(playerIdx,roll){
   const avail=state.pieces[playerIdx].map((p,i)=>({p,i})).filter(({p})=>p.pos!==20);
   if(avail.length===0){setTimeout(()=>nextTurn(),400);return;}
-  const unstarted=avail.filter(({p})=>p.pos===-1);
-  const idx=unstarted.length>0?unstarted[0].i:avail.sort((a,b)=>b.p.pos-a.p.pos)[0].i;
+  // invalidなコマを除外
+  const movable=avail.filter(({p})=>{const r=movePiece(p,roll.val);return!r.invalid;});
+  if(movable.length===0){
+    // 全コマ移動不可→使用済みにして次へ
+    const ri=state.rolls.findIndex(r=>!r.used&&r.val===roll.val);
+    if(ri!==-1)state.rolls[ri].used=true;
+    onAfterMove(playerIdx);
+    return;
+  }
+  const unstarted=movable.filter(({p})=>p.pos===-1);
+  const idx=unstarted.length>0?unstarted[0].i:movable.sort((a,b)=>b.p.pos-a.p.pos)[0].i;
   applyMove(playerIdx,idx,roll.val);
 }
 
@@ -715,8 +796,8 @@ canvas.addEventListener('click',e=>{
   if(state.selectedPieceIdx!==null){
     const hl=getHighlights(state.turn);
     for(const h of hl){
-      if(h.goal){const sg=OUTER[0];if(Math.sqrt((mx-sg.x)**2+(my-sg.y)**2)<=30){applyMove(state.turn,h.pi,h.rollVal);return;}continue;}
-      if(Math.sqrt((mx-h.coord.x)**2+(my-h.coord.y)**2)<=15){applyMove(state.turn,h.pi,h.rollVal);return;}
+      if(h.goal){continue;} // ゴールは手元クリックで処理
+      if(Math.sqrt((mx-h.coord.x)**2+(my-h.coord.y)**2)<=22){applyMove(state.turn,h.pi,h.rollVal);return;}
     }
     state.currentRoll=null;state.selectedPieceIdx=null;drawBoard();updateCards();setMsg('コマを選んでください');return;
   }
@@ -737,7 +818,7 @@ canvas.addEventListener('mousemove',e=>{
   let hit=clickableAreas.some(a=>Math.sqrt((mx-a.cx)**2+(my-a.cy)**2)<=a.r);
   if(!hit&&state.selectedPieceIdx!==null){
     const hl=getHighlights(state.turn),sg=OUTER[0];
-    hit=hl.some(h=>h.goal?Math.sqrt((mx-sg.x)**2+(my-sg.y)**2)<=30:Math.sqrt((mx-h.coord.x)**2+(my-h.coord.y)**2)<=15);
+    hit=hl.some(h=>!h.goal&&Math.sqrt((mx-h.coord.x)**2+(my-h.coord.y)**2)<=22);
   }
   canvas.style.cursor=hit?'pointer':'default';
 });
@@ -763,9 +844,34 @@ function updateCards(){
     const pp=document.getElementById('pp'+i);pp.innerHTML='';
     const pname=document.getElementById('pname'+i);
     if(pname) pname.style.display='';
+
+    // ゴール可能な場合：ゴール済みコマの次のスロットに↓を表示
+    if(showArrows&&!IS_CPU[i]&&i===state.turn&&state.selectedPieceIdx!==null){
+      const selPiece=state.pieces[i][state.selectedPieceIdx];
+      if(selPiece&&selPiece.pos!==20&&selPiece.pos!==-1){
+        const unused=state.rolls.filter(r=>!r.used&&r.val!==null);
+        const goalRoll=unused.find(r=>{const d=getDestCoord(selPiece,r.val);return d&&d.goal;});
+        if(goalRoll){
+          // ゴール済みコマ数 = 次のスロット位置
+          const goalCount=state.pieces[i].filter(p=>p.pos===20).length;
+          // ゴール済みコマの次に↓を挿入
+          const arrow=document.createElement('div');
+          arrow.style.cssText='display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;font-size:14px;color:#f0d060;font-weight:bold;cursor:pointer;text-shadow:-1px 0 #fff,1px 0 #fff,0 -1px #fff,0 1px #fff;';
+          arrow.textContent='↓';
+          arrow.onclick=()=>applyMove(i,state.selectedPieceIdx,goalRoll.val);
+          // goalCount番目の子要素の後に挿入
+          const children=pp.children;
+          if(goalCount>=children.length){
+            pp.appendChild(arrow);
+          } else {
+            pp.insertBefore(arrow, children[goalCount]);
+          }
+        }
+      }
+    }
     state.pieces[i].forEach((piece,pi)=>{
       if(piece.pos!==-1&&piece.pos!==20)return;
-      if(animTarget&&animTarget.pi===i&&animTarget.ci===pi)return;
+      if(animTargets.some(t=>t.pi===i&&t.ci===pi))return;
       const img=charImgs[i];
       let dot;
       if(img&&img.complete&&img.naturalWidth>0){
@@ -779,16 +885,17 @@ function updateCards(){
         dot.className='piece-dot'+(piece.pos===20?' done':'');
         dot.style.background=PLAYER_COLORS[i];
       }
+
       const isFirstUnstarted=showArrows&&!IS_CPU[i]&&i===state.turn&&piece.pos===-1&&state.selectedPieceIdx===null&&state.pieces[i].filter(p=>p.pos===-1).indexOf(piece)===0;
+
       if(isFirstUnstarted){
         const wrap=document.createElement('div');
-        wrap.style.cssText='position:relative;display:inline-block;cursor:pointer;';
+        wrap.style.cssText='position:relative;display:inline-block;cursor:pointer;padding:6px;margin:-6px;';
         const arrow=document.createElement('div');
         arrow.style.cssText='position:absolute;top:-13px;left:50%;transform:translateX(-50%);font-size:11px;color:#ff2222;font-weight:bold;pointer-events:none;text-shadow:-1px 0 #fff,1px 0 #fff,0 -1px #fff,0 1px #fff;line-height:1;';
         arrow.textContent='↓';
 
-        wrap.appendChild(dot);
-        wrap.appendChild(arrow);
+        wrap.appendChild(dot);wrap.appendChild(arrow);
         wrap.onclick=()=>{
           const unused=state.rolls.filter(r=>!r.used&&r.val!==null);if(unused.length===0)return;
           state.currentRoll=unused[0].val;state.selectedPieceIdx=pi;
@@ -810,50 +917,105 @@ function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.lineTo(x+w-r,y);
 
 function drawBoard(){
   ctx.clearRect(0,0,W,W);
-  ctx.fillStyle='#252820';roundRect(ctx,0,0,W,W,10);ctx.fill();
-  ctx.strokeStyle='#3a3e30';ctx.lineWidth=0.8;
-  ctx.beginPath();OUTER.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));ctx.closePath();ctx.stroke();
-  [DIAG_RU,DIAG_RD].forEach(d=>{ctx.beginPath();d.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));ctx.stroke();});
 
+  // 背景（草原テクスチャ）
+  ctx.save();
+  roundRect(ctx,0,0,W,W,10);ctx.clip();
+
+  // ベース色
+  ctx.fillStyle='#5a8a30';
+  ctx.fillRect(0,0,W,W);
+
+  // ムラを出すためのランダムドット（シード固定で毎フレーム同じ模様）
+  const rng=(s)=>{let x=Math.sin(s)*10000;return x-Math.floor(x);};
+  for(let i=0;i<800;i++){
+    const x=rng(i*3+1)*W;
+    const y=rng(i*3+2)*W;
+    const r=rng(i*3+3);
+    const size=1+r*3;
+    const bright=r>0.5;
+    ctx.fillStyle=bright?'rgba(120,180,50,0.25)':'rgba(30,60,10,0.2)';
+    ctx.beginPath();ctx.arc(x,y,size,0,Math.PI*2);ctx.fill();
+  }
+  // 細かい草の線
+  for(let i=0;i<200;i++){
+    const x=rng(i*5+10)*W;
+    const y=rng(i*5+11)*W;
+    const len=3+rng(i*5+12)*5;
+    const angle=-Math.PI/2+( rng(i*5+13)-0.5)*0.8;
+    ctx.strokeStyle='rgba(80,140,20,0.35)';
+    ctx.lineWidth=0.8;
+    ctx.beginPath();
+    ctx.moveTo(x,y);
+    ctx.lineTo(x+Math.cos(angle)*len,y+Math.sin(angle)*len);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 経路ライン（太め・土の道風）
+  ctx.lineCap='round';ctx.lineJoin='round';
+
+  // 外周経路
+  ctx.strokeStyle='#4a3e28';ctx.lineWidth=14;
+  ctx.beginPath();OUTER.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));ctx.closePath();ctx.stroke();
+  ctx.strokeStyle='#6a5a38';ctx.lineWidth=8;
+  ctx.beginPath();OUTER.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));ctx.closePath();ctx.stroke();
+
+  // 対角線経路（かどマスと接続）
+  const diagPaths=[
+    [OUTER[5], ...DIAG_RU, OUTER[15]],   // 右上かど→対角→左下かど
+    [OUTER[10], ...DIAG_RD, OUTER[0]],   // 左上かど→対角→右下SG
+  ];
+  diagPaths.forEach(d=>{
+    ctx.strokeStyle='#4a3e28';ctx.lineWidth=14;
+    ctx.beginPath();d.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));ctx.stroke();
+    ctx.strokeStyle='#6a5a38';ctx.lineWidth=8;
+    ctx.beginPath();d.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));ctx.stroke();
+  });
+
+  // かどマス（大きめ）
   [0,5,10,15].forEach(idx=>{
     const p=OUTER[idx];
-    ctx.fillStyle='#2e3228';ctx.strokeStyle='#5a6048';ctx.lineWidth=1;
-    ctx.beginPath();ctx.arc(p.x,p.y,11,0,Math.PI*2);ctx.fill();ctx.stroke();
-    ctx.fillStyle='#8a9870';ctx.font='500 7px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-    if(idx===0){ctx.fillText('スタート',p.x,p.y-4);ctx.fillText('ゴール',p.x,p.y+5);}
+    // 外枠
+    ctx.fillStyle='#3a3020';
+    ctx.beginPath();ctx.arc(p.x,p.y,16,0,Math.PI*2);ctx.fill();
+    // 内側
+    const colors={0:'#c8a020',5:'#208040',10:'#208040',15:'#208040'};
+    ctx.fillStyle=colors[idx]||'#208040';
+    ctx.beginPath();ctx.arc(p.x,p.y,11,0,Math.PI*2);ctx.fill();
+
   });
+
+  // 通常マス
   OUTER.forEach((p,idx)=>{
     if([0,5,10,15].includes(idx))return;
-    ctx.fillStyle='#3a3e30';ctx.strokeStyle='#4a4e3a';ctx.lineWidth=0.5;
-    ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#3a3020';
+    ctx.beginPath();ctx.arc(p.x,p.y,9,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#8a7850';
+    ctx.beginPath();ctx.arc(p.x,p.y,6,0,Math.PI*2);ctx.fill();
+
   });
 
-  const BCX=W/2,BCY=W/2;
-  ctx.font='500 8px sans-serif';ctx.fillStyle='#4a5240';ctx.textAlign='center';ctx.textBaseline='middle';
-  OUTER.forEach((p,idx)=>{
-    if(idx===0)return;
-    const dx=p.x-BCX,dy=p.y-BCY,len=Math.sqrt(dx*dx+dy*dy)||1;
-    ctx.fillText(idx,p.x+(dx/len)*14,p.y+(dy/len)*14);
-  });
-
-  const DIAG_LABELS=[{p:DIAG_RU[0],l:'A1'},{p:DIAG_RU[1],l:'A2'},{p:DIAG_RU[3],l:'D1'},{p:DIAG_RU[4],l:'D2'},{p:DIAG_RD[0],l:'C1'},{p:DIAG_RD[1],l:'C2'},{p:DIAG_RD[3],l:'B1'},{p:DIAG_RD[4],l:'B2'}];
+  // 対角マス
   const seen=new Set();
   [...DIAG_RU,...DIAG_RD].forEach(p=>{
     const key=`${p.x.toFixed(1)}_${p.y.toFixed(1)}`;if(seen.has(key))return;seen.add(key);
     const isCtr=Math.abs(p.x-CENTER.x)<0.1&&Math.abs(p.y-CENTER.y)<0.1;
     if(isCtr){
-      ctx.fillStyle='#2e3228';ctx.strokeStyle='#5a6048';ctx.lineWidth=1;
-      ctx.beginPath();ctx.arc(p.x,p.y,8,0,Math.PI*2);ctx.fill();ctx.stroke();
-      ctx.fillStyle='#8a9870';ctx.font='500 7px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.fillText('中央',p.x,p.y-3);
+      ctx.fillStyle='#3a2010';
+      ctx.beginPath();ctx.arc(p.x,p.y,14,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#c06020';
+      ctx.beginPath();ctx.arc(p.x,p.y,10,0,Math.PI*2);ctx.fill();
+
     }else{
-      ctx.fillStyle='#2e3228';ctx.strokeStyle='#4a5040';ctx.lineWidth=0.5;
-      ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.fillStyle='#3a3020';
+      ctx.beginPath();ctx.arc(p.x,p.y,7,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#6a8858';
+      ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fill();
     }
   });
-  ctx.font='500 7px sans-serif';ctx.fillStyle='#4a6040';ctx.textAlign='center';ctx.textBaseline='top';
-  DIAG_LABELS.forEach(({p,l})=>ctx.fillText(l,p.x,p.y+6));
 
+  // ハイライト矢印
   function drawArrow(x, y){
     ctx.save();
     ctx.fillStyle='#ff2222';
@@ -862,40 +1024,33 @@ function drawBoard(){
     ctx.beginPath();
     const aw=7,ah=7,sw=3,sh=6;
     ctx.moveTo(x,y+ah);
-    ctx.lineTo(x-aw/2,y);
-    ctx.lineTo(x-sw/2,y);
-    ctx.lineTo(x-sw/2,y-sh);
-    ctx.lineTo(x+sw/2,y-sh);
-    ctx.lineTo(x+sw/2,y);
-    ctx.lineTo(x+aw/2,y);
-    ctx.closePath();
-    ctx.fill();ctx.stroke();
+    ctx.lineTo(x-aw/2,y);ctx.lineTo(x-sw/2,y);
+    ctx.lineTo(x-sw/2,y-sh);ctx.lineTo(x+sw/2,y-sh);
+    ctx.lineTo(x+sw/2,y);ctx.lineTo(x+aw/2,y);
+    ctx.closePath();ctx.fill();ctx.stroke();
     ctx.restore();
   }
-
 
   if(showArrows&&state&&state.phase==='move'&&!IS_CPU[state.turn]&&state.rolls.filter(r=>!r.used&&r.val!==null).length>0){
     if(state.selectedPieceIdx===null){
       state.pieces[state.turn].forEach((piece)=>{
-        if(piece.pos===20||piece.pos===-1) return;
+        if(piece.pos===20||piece.pos===-1)return;
+        // 移動可能な目が1つでもあるコマだけ矢印表示
+        const unused=state.rolls.filter(r=>!r.used&&r.val!==null);
+        const canMove=unused.some(r=>{const d=getDestCoord(piece,r.val);return d!==null;});
+        if(!canMove)return;
         const coord=getPieceCoord(piece);
-        if(coord) drawArrow(coord.x, coord.y-24);
+        if(coord)drawArrow(coord.x,coord.y-24);
       });
-    } else {
+    }else{
       getHighlights(state.turn).forEach(h=>{
-        if(h.goal){
-          const sg=OUTER[0];
-          ctx.strokeStyle='#f0d060';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(sg.x,sg.y,15,0,Math.PI*2);ctx.stroke();
-          ctx.strokeStyle='#c8b87a';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(sg.x,sg.y,19,0,Math.PI*2);ctx.stroke();
-          ctx.fillStyle='rgba(240,208,96,0.2)';ctx.beginPath();ctx.arc(sg.x,sg.y,19,0,Math.PI*2);ctx.fill();
-          drawArrow(sg.x, sg.y-24);
-          return;
-        }
-        drawArrow(h.coord.x, h.coord.y-24);
+        if(h.goal){return;} // ゴールは手元で表示
+        drawArrow(h.coord.x,h.coord.y-24);
       });
     }
   }
 
+  // コマ描画
   clickableAreas=[];
   if(!state)return;
   const cmap={};
@@ -907,10 +1062,9 @@ function drawBoard(){
       if(!cmap[key])cmap[key]=[];cmap[key].push({pi,ci,coord});
     }
   }
-    Object.values(cmap).forEach(list=>{
-    // アニメーション中の対象コマは通常描画からスキップ
-    const filteredList=list.filter(item=>!animTarget||(item.pi!==animTarget.pi||item.ci!==animTarget.ci));
-    if(filteredList.length===0) return;
+  Object.values(cmap).forEach(list=>{
+    const filteredList=list.filter(item=>!animTargets.some(t=>t.pi===item.pi&&t.ci===item.ci));
+    if(filteredList.length===0)return;
     const item=filteredList[0];
     const tot=filteredList.length;
     const cx=item.coord.x,cy=item.coord.y;
@@ -918,7 +1072,6 @@ function drawBoard(){
     const charImg=charImgs[item.pi];
     if(charImg&&charImg.complete&&charImg.naturalWidth>0){
       ctx.save();
-
       const ix=cx-20,iy=cy-24,iw=40,ih=40;
       ctx.globalAlpha=0.8;
       for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]]){ctx.drawImage(charImg,ix+dx,iy+dy,iw,ih);}
@@ -941,7 +1094,7 @@ function drawBoard(){
         ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(tot,bx,by);
       }
     }
-    if(isSel)clickableAreas.push({cx,cy,r:20,pi:item.pi,ci:item.ci});
+    if(isSel)clickableAreas.push({cx,cy,r:28,pi:item.pi,ci:item.ci});
   });
 }
 
