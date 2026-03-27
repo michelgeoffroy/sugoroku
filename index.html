@@ -580,13 +580,12 @@ function onAfterMove(playerIdx){
     state.phase='move';
     state.selectedPieceIdx=null;
     state.currentRoll=null;
-    // 全コマがinvalidか確認
+    // 全コマがinvalidか確認（残りroll全てに対してチェック）
     const allInvalid=state.pieces[playerIdx].every(p=>{
       if(p.pos===20)return true;
       return unused.every(r=>movePiece(p,r.val).invalid);
     });
     if(allInvalid){
-      // 動かせるコマなし→ロールを全部使用済みにして次ターン
       state.rolls.forEach(r=>{r.used=true;});
       setTimeout(()=>nextTurn(),600);
       return;
@@ -886,7 +885,10 @@ function updateCards(){
         dot.style.background=PLAYER_COLORS[i];
       }
 
-      const isFirstUnstarted=showArrows&&!IS_CPU[i]&&i===state.turn&&piece.pos===-1&&state.selectedPieceIdx===null&&state.pieces[i].filter(p=>p.pos===-1).indexOf(piece)===0;
+      // 手元コマが2マス以上進める場合のみ矢印表示
+      const unusedRolls=state.rolls.filter(r=>!r.used&&r.val!==null);
+      const homeCanMove=unusedRolls.some(r=>!movePiece({pos:-1,route:'outer',diagPos:-1},r.val).invalid);
+      const isFirstUnstarted=showArrows&&!IS_CPU[i]&&i===state.turn&&piece.pos===-1&&state.selectedPieceIdx===null&&state.pieces[i].filter(p=>p.pos===-1).indexOf(piece)===0&&homeCanMove;
 
       if(isFirstUnstarted){
         const wrap=document.createElement('div');
@@ -1043,8 +1045,14 @@ function drawBoard(){
         if(coord)drawArrow(coord.x,coord.y-24);
       });
     }else{
-      getHighlights(state.turn).forEach(h=>{
-        if(h.goal){return;} // ゴールは手元で表示
+      const hl=getHighlights(state.turn);
+      if(hl.length===0&&state.selectedPieceIdx!==null){
+        state.selectedPieceIdx=null;
+        state.currentRoll=null;
+        setMsg('このコマは動かせません。別のコマを選んでください。');
+      }
+      hl.forEach(h=>{
+        if(h.goal){return;}
         drawArrow(h.coord.x,h.coord.y-24);
       });
     }
