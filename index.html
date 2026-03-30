@@ -9,11 +9,11 @@
 #main-layout { display: flex; gap: var(--gap); align-items: stretch; }
 #left-col { display: flex; flex-direction: column; gap: var(--gap); width: var(--board-size); }
 #board-top { display: flex; gap: var(--gap); }
-#board-top .player-card { flex: 1; }
+#board-top .player-card { flex: 1; min-height: 52px; }
 #board-bottom { display: flex; gap: var(--gap); }
-#board-bottom .player-card { flex: 1; }
+#board-bottom .player-card { flex: 1; min-height: 52px; }
+#right-col #log { background: var(--panel-bg); border-radius: var(--card-radius); padding: 8px 10px; border: var(--panel-border); flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 #right-col { display: flex; flex-direction: column; gap: var(--gap); width: var(--sidebar-width); }
-#right-col #log { background: var(--panel-bg); border-radius: var(--card-radius); padding: 8px 10px; border: var(--panel-border); flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
 
 :root {
   --board-size: 380px;
@@ -80,26 +80,24 @@ body {
 
 /* 盤面: 左列 全行 */
 #board-cell { grid-column: 1; grid-row: 1 / 4; display: flex; flex-direction: column; gap: 8px; }
-canvas#board { display: block; width: var(--board-size); height: var(--board-size); border-radius: 10px; cursor: default; flex-shrink: 0; }
-#board-top { display: flex; gap: 8px; }
-#board-top .player-card { flex: 1; }
+#board-top .player-card { flex: 1; min-height: 52px; }
 #board-bottom { display: flex; gap: 8px; align-items: stretch; }
 #board-bottom .player-card { flex: 1; }
 #p4-cell { display: none; }
 #p3-cell { display: none; }
 #p2-cell { display: none; }
 
-/* ログ: 右列 行1〜2 */
-#log-cell { grid-column: 2; grid-row: 1 / 3; display: flex; flex-direction: column; height: 328px; overflow: hidden; }
-#log { background: var(--panel-bg); border-radius: var(--card-radius); padding: 8px 10px; border: var(--panel-border); display: flex; flex-direction: column; flex: 1; overflow: hidden; max-height: calc(var(--board-size) + 60px); }
+#log-cell { grid-column: 2; grid-row: 1 / 3; display: flex; flex-direction: column; overflow: hidden; }
+/* #log は #right-col #log に統合済み */
+#log { background: var(--panel-bg); border-radius: var(--card-radius); padding: 8px 10px; border: var(--panel-border); display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 #log-label { font-size: 11px; color: #6b6a5a; margin-bottom: 4px; flex-shrink: 0; }
-#log-entries { font-size: 10px; color: #7a7a68; line-height: 1.8; overflow-y: auto; flex: 1; min-height: 0; }
+#log-entries { font-size: 10px; color: #7a7a68; line-height: 1.8; overflow-y: scroll; flex: 1; min-height: 0; }
 
 /* サイコロ: 右列 行3 */
 
 
 /* プレイヤーカード */
-.player-card { background: var(--panel-bg); border-radius: var(--card-radius); padding: 6px 10px; border: var(--panel-border); transition: border-color 0.2s; overflow: visible; align-self: start; }
+.player-card { background: var(--panel-bg); border-radius: var(--card-radius); padding: 6px 10px; border: var(--panel-border); transition: border-color 0.2s; overflow: visible; align-self: start; min-height: 52px; }
 .player-card.active { border-color: #8a7e52; }
 .pc-name { font-size: 11px; color: #9a9680; white-space: nowrap; }
 .pc-header { display: flex; align-items: center; gap: 6px; }
@@ -111,7 +109,7 @@ canvas#board { display: block; width: var(--board-size); height: var(--board-siz
 /* 行3の独立セル */
 
 /* サイコロパネル */
-#yut-panel { background: var(--panel-bg); border-radius: var(--card-radius); padding: 8px 10px; border: var(--panel-border); }
+#yut-panel { background: var(--panel-bg); border-radius: var(--card-radius); padding: 8px 10px; border: var(--panel-border); flex-shrink: 0; }
 #yut-label { font-size: 11px; color: #6b6a5a; margin-bottom: 6px; }
 #yut-sticks { display: flex; gap: 3px; justify-content: center; margin-bottom: 6px; }
 .stick { width: 9px; height: 36px; border-radius: 5px; }
@@ -125,7 +123,6 @@ canvas#board { display: block; width: var(--board-size); height: var(--board-siz
 #roll-btn:hover:not(:disabled) { background: #3a3928; }
 #roll-btn:disabled { opacity: 0.4; cursor: default; }
 #move-btn { display: none; }
-#rolls-remaining { font-size: 11px; color: #8a9870; text-align: center; min-height: 16px; margin-bottom: 4px; }
 #turn-info { font-size: 11px; color: #6b6a5a; text-align: center; margin-top: 6px; }
 #msg-bar { display: none; }
 
@@ -157,7 +154,7 @@ canvas#board { display: block; width: var(--board-size); height: var(--board-siz
 <body>
 <div id="wrapper">
   <div id="scale-wrapper">
-<div id="game-title">ミシェすごろく <span style="font-size:10px;color:#6b6a5a;font-weight:400;">v0.1.0</span></div>
+<div id="game-title">ミシェすごろく <span style="font-size:10px;color:#6b6a5a;font-weight:400;">v0.1.16</span></div>
 <div id="main-layout">
 
   <!-- 左枠：P3/P4・フィールド・P2/P1 -->
@@ -187,8 +184,7 @@ canvas#board { display: block; width: var(--board-size); height: var(--board-siz
       <div id="pending-rolls"></div>
       <button id="roll-btn">投げる</button>
       <button id="move-btn">コマを動かす</button>
-      <div id="rolls-remaining"></div>
-    </div>
+          </div>
   </div>
 
 </div></div>
@@ -518,7 +514,7 @@ function rollYut(){
   else if(r<0.75) val=3;
   else if(r<0.89) val=4;
   else val=5;
-  if(state.rollCount>=2&&val>=4)val=Math.ceil(Math.random()*3);
+  if(state.rollCount>=rollLimit-1&&val>=4)val=Math.ceil(Math.random()*3);
   // 棒のアニメはvalに合わせて表示を調整
   const upCount=val===5?0:val===4?4:val;
   let up=0;
@@ -612,15 +608,14 @@ function onAfterMove(playerIdx){
 
 function setUI(playerIdx){
   const rBtn=document.getElementById('roll-btn');
-  const rem=document.getElementById('rolls-remaining');
   if(IS_CPU[playerIdx]){rBtn.disabled=true;renderRolls();return;}
   const unused=state.rolls.filter(r=>!r.used&&r.val!==null);
   if(state.phase==='roll'){
     rBtn.disabled=false;rBtn.textContent='投げる';
-    rem.textContent=unused.length>0?`残り${unused.length}回動かせます`:'';
+  
   }else if(state.phase==='move'){
     rBtn.disabled=true;rBtn.textContent='投げる';
-    rem.textContent=unused.length>0?`残り${unused.length}回動かせます`:'';
+  
   }
   renderRolls();
 }
@@ -780,14 +775,24 @@ document.getElementById('roll-btn').addEventListener('click',()=>{
   animateRoll(roll.faces,()=>{
     document.getElementById('yut-result').textContent=`${roll.val}マス`;
     addLog(`${PLAYER_NAMES[state.turn]}：+${roll.val}マス`);
-    if((roll.val===4||roll.val===5)&&state.rollCount<4){
+    if((roll.val===4||roll.val===5)&&state.rollCount<rollLimit){
       state.phase='roll';
       setMsg('もう1回振れる！');
       document.getElementById('roll-btn').disabled=false;
     }else{
       state.phase='move';
+      // 全コマinvalidチェック
+      const unusedNow=state.rolls.filter(r=>!r.used&&r.val!==null);
+      const allInv=state.pieces[state.turn].every(p=>{
+        if(p.pos===20)return true;
+        return unusedNow.every(r=>movePiece(p,r.val).invalid);
+      });
+      if(allInv){
+        state.rolls.forEach(r=>{r.used=true;});
+        setTimeout(()=>nextTurn(),400);
+        return;
+      }
       showArrows=true;
-      setMsg('コマを選んでください');
     }
     setUI(state.turn);drawBoard();updateCards();
   });
@@ -1156,6 +1161,17 @@ applyScale();
 window.addEventListener('resize', applyScale);
 
 // サイコロとP1/P2の高さを合わせる
+// left-colとright-colの高さを同期
+function syncHeight(){
+  const lc = document.getElementById('left-col');
+  const rc = document.getElementById('right-col');
+  if(!lc||!rc) return;
+  rc.style.height = lc.offsetHeight + 'px';
+}
+window.addEventListener('resize', syncHeight);
+// DOMロード後に実行
+setTimeout(syncHeight, 100);
+
 state=initState();drawBoard();updateCards();startTurn(0);
 });
 
